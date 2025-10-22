@@ -1,4 +1,4 @@
-
+# db.py — clean, tested version (no stray escapes)
 import sqlite3
 from contextlib import contextmanager
 
@@ -55,11 +55,11 @@ def delete_student(student_id: int):
         conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
 
 def upsert_daily_logs(log_date: str, rows: list):
-    \"\"\"Insert daily logs. Enforces one log per student per date by UNIQUE constraint.
+    """Insert daily logs. Enforces one log per student per date by UNIQUE constraint.
     rows: list of dicts with keys: student_id, surah, start_ayah, end_ayah, num_lines, pass_fail
-    \"\"\"
+    """
     with get_conn() as conn:
-        # Check if any logs already exist for this date
+        # Block duplicates for same date
         cur = conn.execute("SELECT COUNT(*) as c FROM daily_logs WHERE log_date = ?", (log_date,))
         if cur.fetchone()['c'] > 0:
             raise ValueError("Logs for this date already exist. You can use the editor below to view/export them.")
@@ -71,22 +71,28 @@ def upsert_daily_logs(log_date: str, rows: list):
 
 def get_logs_by_date_range(start_date: str, end_date: str):
     with get_conn() as conn:
-        cur = conn.execute('''
+        cur = conn.execute(
+            """
             SELECT dl.log_date, s.name as student, dl.surah, dl.start_ayah, dl.end_ayah, dl.num_lines, dl.pass_fail, dl.created_at
             FROM daily_logs dl
             JOIN students s ON s.id = dl.student_id
             WHERE dl.log_date BETWEEN ? AND ?
             ORDER BY dl.log_date DESC, s.name ASC
-        ''', (start_date, end_date))
+            """,
+            (start_date, end_date),
+        )
         return [dict(r) for r in cur.fetchall()]
 
 def get_logs_for_date(log_date: str):
     with get_conn() as conn:
-        cur = conn.execute('''
+        cur = conn.execute(
+            """
             SELECT dl.id, s.name as student, dl.surah, dl.start_ayah, dl.end_ayah, dl.num_lines, dl.pass_fail, dl.created_at
             FROM daily_logs dl
             JOIN students s ON s.id = dl.student_id
             WHERE dl.log_date = ?
             ORDER BY s.name ASC
-        ''', (log_date,))
+            """,
+            (log_date,),
+        )
         return [dict(r) for r in cur.fetchall()]
