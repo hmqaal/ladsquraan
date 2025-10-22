@@ -1,15 +1,18 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import date
 from surahs import SURAHS
 import db
 
+# --- Page setup & DB init ---
 st.set_page_config(page_title="Madrassah Memorisation Tracker", page_icon="📖", layout="wide")
 db.init_db()
 
 st.title("📖 Madrassah Memorisation Tracker")
 
+# ===========================
+# Sidebar: Students & Export
+# ===========================
 with st.sidebar:
     st.header("👥 Manage Students")
     new_student = st.text_input("Add a student", placeholder="Student full name")
@@ -33,23 +36,38 @@ with st.sidebar:
 
     st.divider()
     st.header("🗂 Export History")
-    with st.form("export_form"):
-        c1, c2 = st.columns(2)
-        start = c1.date_input("From", value=date.today().replace(day=1))
-        end = c2.date_input("To", value=date.today())
-        submitted = st.form_submit_button("Download CSV")
-        if submitted:
-            if start > end:
-                st.error("Start date must be before end date.")
-            else:
-                rows = db.get_logs_by_date_range(start.isoformat(), end.isoformat())
-                if rows:
-                    df = pd.DataFrame(rows)
-                    st.download_button("Download", df.to_csv(index=False).encode('utf-8'), file_name=f"memorisation_{start}_{end}.csv", mime="text/csv")
-                    st.success(f"Exported {len(df)} rows.")
-                else:
-                    st.warning("No records in that range.")
 
+    # NOTE: st.download_button is NOT allowed inside st.form in Streamlit 1.38
+    c1, c2 = st.columns(2)
+    start = c1.date_input("From", value=date.today().replace(day=1), key="export_from")
+    end = c2.date_input("To", value=date.today(), key="export_to")
+
+    if st.button("Prepare CSV", key="prepare_csv"):
+        if start > end:
+            st.error("Start date must be before end date.")
+            st.session_state.pop("export_df", None)
+        else:
+            rows = db.get_logs_by_date_range(start.isoformat(), end.isoformat())
+            if rows:
+                st.session_state["export_df"] = pd.DataFrame(rows)
+                st.success(f"Prepared {len(rows)} rows. Use the button below to download.")
+            else:
+                st.session_state.pop("export_df", None)
+                st.warning("No records in that range.")
+
+    if "export_df" in st.session_state and not st.session_state["export_df"].empty:
+        csv_bytes = st.session_state["export_df"].to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV",
+            csv_bytes,
+            file_name=f"memorisation_{start}_{end}.csv",
+            mime="text/csv",
+            key="download_csv_btn",
+        )
+
+# ===========================
+# Main: Daily logging
+# ===========================
 st.subheader("📝 Daily Logging")
 st.caption("You can log each student's entry **once per day**. Choose the date and fill in the table, then submit.")
 
@@ -93,17 +111,19 @@ edited = st.data_editor(
 
 st.info("Tip: Scroll horizontally on small screens to see all columns.")
 
-# Submit section
-col1, col2 = st.columns([1,1])
+# Submit / View
+col1, col2 = st.columns([1, 1])
+
 with col1:
     if st.button("Submit today's logs", type="primary"):
         # Basic validation
         problems = []
-        for i, row in edited.iterrows():
+        for _, row in edited.iterrows():
             if int(row['end_ayah']) < int(row['start_ayah']):
                 problems.append(f"{row['student']}: end ayah must be >= start ayah")
             if int(row['num_lines']) < 0:
                 problems.append(f"{row['student']}: lines must be >= 0")
+
         if problems:
             st.error("\n".join(problems))
         else:
